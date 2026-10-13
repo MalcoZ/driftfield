@@ -548,8 +548,8 @@ void main(){
   mask=mix(mask,max(mask,.82),uMine*(1.-uAbs));           // recognizable: it shows broadly across the screen
   // finger lens: photos swirl and swell around the place you touch
   vec2 dpf=p-uFinger.xy; float fall=exp(-dot(dpf,dpf)*4.5)*uFinger.z;
-  float fa=fall*.85*(1.+.9*uMine);
-  dpf=mat2(cos(fa),-sin(fa),sin(fa),cos(fa))*dpf*(1.-.22*fall);
+  float fa=fall*.425*(1.+.9*uMine);
+  dpf=mat2(cos(fa),-sin(fa),sin(fa),cos(fa))*dpf*(1.-.11*fall);   // half the earlier strength
   vec2 uvf=(uFinger.xy+dpf)/vec2(uAspect,1.)+.5;
   vec2 wuv=uvf+(q-.5)*(uImgWarp+.03*uChaos)+vec2(sin(uv.y*28.+t*8.)*.005*uKick,0.);
   // your own photo melts: gentle when recognizable, a flowing organic smear when abstract
@@ -1124,21 +1124,22 @@ function startSynth() {
   const mix = c.createGain(); mix.gain.value = .4;
   // voice 1, analog: two detuned saws and two detuned squares (crossfaded by Wave) over a square sub
   const analog = c.createGain(), sawG = c.createGain(), sqG = c.createGain();
+  analog.gain.value = 0;   // all four voices start silent, so nothing bursts out before the mix settles
   sawG.connect(analog); sqG.connect(analog); analog.connect(mix);
   const o1 = osc('sawtooth', f * 2, sawG), o2 = osc('sawtooth', f * 2, sawG);
   const q1 = osc('square', f * 2, sqG), q2 = osc('square', f * 2, sqG);
   const sub = osc('square', f, analog, .5);
   // voice 2, organ: soft drawbar sines
-  const organ = c.createGain(); organ.connect(mix);
+  const organ = c.createGain(); organ.gain.value = 0; organ.connect(mix);
   const d1 = osc('sine', f, organ, 1), d2 = osc('sine', f * 2, organ, .55), d3 = osc('sine', f * 3, organ, .28), d4 = osc('triangle', f * 4, organ, .08);
   // voice 3, FM: a mellow two-operator tone (the index stays low, so it never rings shrill)
-  const fm = c.createGain(); fm.connect(mix);
+  const fm = c.createGain(); fm.gain.value = 0; fm.connect(mix);
   const car = osc('sine', f * 2, fm, 1);
   const mod = c.createOscillator(); mod.type = 'sine'; mod.frequency.value = f * 2;
   const modG = c.createGain(); modG.gain.value = f; mod.connect(modG); modG.connect(car.frequency); mod.start(now);
   const fmSub = osc('sine', f, fm, .45);
   // voice 4, breath: noise tuned into resonant bands over a sine sub
-  const breath = c.createGain(); breath.connect(mix);
+  const breath = c.createGain(); breath.gain.value = 0; breath.connect(mix);
   const nb = c.createBuffer(1, c.sampleRate * 2, c.sampleRate), ch = nb.getChannelData(0);
   for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
   const noise = c.createBufferSource(); noise.buffer = nb; noise.loop = true; noise.start(now);
@@ -1186,11 +1187,12 @@ function startSynth() {
   merger.connect(wet); wet.connect(S.master);
   vca.connect(S.master);
   S.master.gain.cancelScheduledValues(now);
-  S.master.gain.setTargetAtTime(.34, now, .3);
+  S.master.gain.setValueAtTime(0, now);
+  S.master.gain.setTargetAtTime(.34, now + .15, 1.9);   // swells in over about six seconds
   S.synth = {
     o1, o2, q1, q2, sub, d1, d2, d3, d4, car, mod, modG, fmSub, bp1, bp2, bSub,
     analog, organ, fm, breath, sawG, sqG, send, pre, lp1, lp2, envG, vca, gL, gR, dL, dR, echoT: 0,
-    lfo, lfoF, lfoP, nG, freq: f, semi: 0, step: 0, nextT: now + .06, pat: 5, patNext: 5, depthAdd: 0,
+    lfo, lfoF, lfoP, nG, born: performance.now(), freq: f, semi: 0, step: 0, nextT: now + .06, pat: 5, patNext: 5, depthAdd: 0,
     stops: [o1, o2, q1, q2, sub, d1, d2, d3, d4, car, mod, fmSub, noise, bSub, lfo, env].filter(Boolean),
     nodes: [mix, analog, sawG, sqG, organ, fm, modG, breath, bp1, bp2, nG, pre, sh, lp1, lp2, envG, shelf, ceil, vca,
             dL, dR, fL, fR, hp, gL, gR, send, merger, wet],
@@ -1201,7 +1203,9 @@ function stopSynth() {
   const s = S.synth; if (!s) return;
   S.synth = null;
   const now = S.ctx.currentTime;
+  const held = S.master.gain.value;
   S.master.gain.cancelScheduledValues(now);
+  S.master.gain.setValueAtTime(held, now);
   S.master.gain.setTargetAtTime(0, now, .15);
   setTimeout(() => {
     s.stops.forEach(n => { try { n.stop(); } catch (_) {} });
@@ -1214,6 +1218,7 @@ const gridPattern = (x, y) => Math.min(2, Math.floor(y * 3)) * 4 + Math.min(3, M
 function updateSynth(now) {
   const s = S.synth; if (!s) return;
   const t = S.ctx.currentTime;
+  const open = smooth(clamp((now - s.born) / 5200));   // 0 to 1 over the first few seconds
   const x = clamp(tim.x), y = clamp(tim.y), active = now - tim.lastMove < 1800;
   const mode = cur.touchMode, basePat = Math.min(GATES.length - 1, Math.floor(uC.groove * GATES.length));
   const bank = uC.groove >= .5 ? 12 : 0;
@@ -1228,7 +1233,7 @@ function updateSynth(now) {
   tmb = clamp(tmb + .18 * Math.sin(now * .00021) + .12 * Math.sin(now * .00057));
   waveOff = (tmb - .5) * .9;
 
-  const depth = clamp(.05 + .9 * uC.gate + s.depthAdd);   // from a faint pulse to a hard chop
+  const depth = clamp(.05 + .9 * uC.gate + s.depthAdd) * (.3 + .7 * open);   // a faint pulse to a hard chop; eases in at the start
   const floor = .48 * (1 - depth);
   const stepLen = STEP * [2, 1.5, 1, .75][Math.min(3, Math.floor(uC.rate * 4))];   // eighths up to fast triplet feel
   const hold = .25 + .7 * uC.length, att = .004 + .012 * uC.length;
@@ -1288,7 +1293,7 @@ function updateSynth(now) {
   s.bp1.frequency.setTargetAtTime(s.freq * 2 * kb, t, .15); s.bp2.frequency.setTargetAtTime(s.freq * spread * kb, t, .15);
   // filter, capped low enough that nothing turns shrill
   const vBright = wv(0) * 1 + wv(1) * 1.5 + wv(2) * 2.1 + wv(3) * 2.6;   // organ, FM and breath sit brighter
-  const cutoff = Math.min(3600, 110 * Math.pow(2, uC.tone * 3.6 + uC.terrain * .4 + cutX * 1.5) * vBright * (1 + tim.speed * .2));
+  const cutoff = Math.min(3600, 110 * Math.pow(2, uC.tone * 3.6 + uC.terrain * .4 + cutX * 1.5) * vBright * (1 + tim.speed * .2)) * (.3 + .7 * open);   // filter opens as the sound arrives
   s.lfo.frequency.setTargetAtTime(.08 + uC.wobble * uC.wobble * 6, t, .3);
   s.lfoF.gain.setTargetAtTime(uC.wobble * 1100, t, .3);
   s.lfoP.gain.setTargetAtTime(uC.wobble * 9, t, .3);
@@ -1785,7 +1790,7 @@ function updateFinger(dt, now) {
   fing.act += (want - fing.act) * (1 - Math.exp(-dt * (want ? 6 : 1.4)));
   const wave = .5 + .5 * Math.sin(abstractT * .5);              // about a 12 second cycle
   let a = clamp((wave - .2) / .6); a = a * a * (3 - 2 * a);       // lingers at both ends
-  absLvl = clamp(a + (tim.x - .5) * .7 * fing.act);              // moving right melts it further
+  absLvl = clamp(a + (tim.x - .5) * .35 * fing.act);              // moving right melts it further
 }
 let simTime = Math.random() * 100, inject = 0, nextInject = 18 + Math.random() * 20;
 const audioAmt = () => Math.min(.8, audioLvl) * (RM ? .4 : 1);
