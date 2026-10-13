@@ -88,7 +88,7 @@ body.in-intro #corner,body.in-intro #bDice{opacity:0;pointer-events:none}
   transition:opacity .3s,transform .3s,visibility 0s .3s}
 #panel.open{opacity:1;transform:none;visibility:visible;pointer-events:auto;transition:opacity .3s,transform .3s,visibility 0s}
 .phead{display:flex;align-items:center;gap:6px;position:sticky;top:-14px;padding:8px 0 8px;margin-top:-8px;z-index:1;transition:background .2s}
-.phead.stuck{background:linear-gradient(rgba(var(--ca),.12),rgba(var(--ca),.12)),rgba(16,12,34,.94)}
+.phead.stuck{background:linear-gradient(rgba(var(--ca),.12),rgba(var(--ca),.12)),rgba(16,12,34,.985)}
 .phead h2{flex:1;margin:0;font-size:22px;font-weight:600;font-variation-settings:'opsz' 96;letter-spacing:-.015em}
 .lede{margin:2px 0 12px;color:var(--dim);font-size:14.5px;line-height:1.5}
 .actions{display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:10px}
@@ -192,10 +192,27 @@ kbd{border-color:rgba(var(--ca),.38)}
 #intro.steps-on .step:nth-child(4){transition-delay:1.4s}
 #intro.steps-on .step:nth-child(5){transition-delay:1.9s}
 
+#scrim,.pfoot{display:none}
 @media (max-width:640px){
-  #panel{top:auto;bottom:0;left:0;right:0;width:auto;max-height:84vh;border-radius:24px 24px 0 0;transform:translateY(40px);
-    padding-bottom:calc(22px + env(safe-area-inset-bottom))}
   #steps .step{font-size:16px}
+}
+/* phones and tablets: the sheet is a centered lightbox over a dimmed screen, with margin all around so a tap outside closes it */
+@media (max-width:640px),(pointer:coarse){
+  #scrim{display:block;position:fixed;inset:0;z-index:7;background:rgba(5,3,14,.58);cursor:pointer;
+    opacity:0;visibility:hidden;pointer-events:none;transition:opacity .3s,visibility 0s .3s;-webkit-tap-highlight-color:transparent}
+  #scrim.on{opacity:1;visibility:visible;pointer-events:auto;transition:opacity .3s,visibility 0s}
+  #panel{z-index:8;top:50%;left:50%;right:auto;bottom:auto;translate:-50% -50%;width:min(440px,calc(100% - 28px));
+    max-height:calc(100% - 110px - env(safe-area-inset-top) - env(safe-area-inset-bottom));border-radius:24px;padding-bottom:0;
+    transform:scale(.96)}
+  #panel.open{transform:scale(1)}
+  .phead .ibtn{width:46px;height:46px}
+  .phead .ibtn svg{width:20px;height:20px}
+  .about{padding-bottom:6px}
+  .pfoot{display:block;position:sticky;bottom:0;margin:0 -20px;padding:14px 20px calc(16px + env(safe-area-inset-bottom));
+    background:linear-gradient(rgba(16,12,34,0),rgba(16,12,34,.96) 38%)}
+  #bDone{width:100%;min-height:50px;font:inherit;font-size:16px;font-weight:600;border-radius:16px;cursor:pointer;touch-action:manipulation;
+    color:rgb(var(--cal));background:rgba(var(--ca),.24);border:1.5px solid rgba(var(--ca),.6)}
+  #bDone:active{background:rgba(var(--ca),.4)}
 }
 @media (prefers-reduced-motion:reduce){
   *{transition-duration:.01ms !important;animation:none !important}
@@ -225,6 +242,7 @@ kbd{border-color:rgba(var(--ca),.38)}
   </span></span></span>
 </button>
 
+<div id="scrim" aria-hidden="true"></div>
 <section id="panel" class="glass" aria-label="Settings and info">
   <div class="phead">
     <h2>Driftfield</h2>
@@ -241,7 +259,7 @@ kbd{border-color:rgba(var(--ca),.38)}
       <span>Save a looping GIF<small>Records 2 seconds that play forward and back</small></span></button>
     <button id="bAdd" class="bigbtn">
       <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="m21 16-5.2-5.2L5 20"/></svg>
-      <span>Add your own photo<small>It melts into the field and keeps coming back</small></span></button>
+      <span>Add your own photo<small>It drifts in and out of abstract, repainted in the theme colors</small></span></button>
   </div>
   <div class="prow" role="group" aria-label="Preset">
     <div class="stepper">
@@ -275,6 +293,7 @@ kbd{border-color:rgba(var(--ca),.38)}
       </dl>
     </details>
   </div>
+  <div class="pfoot"><button id="bDone" type="button">Done</button></div>
 </section>
 
 <div id="intro" role="dialog" aria-label="Welcome to Driftfield">
@@ -468,8 +487,8 @@ void main(){
 const DISPLAY_FS = `
 uniform sampler2D uSim,uImgA,uImgB,uLandA,uLandB;
 uniform float uImgMix,uAspA,uAspB,uLandMix,uLAspA,uLAspB;
-uniform float uGlow,uChaos,uSpaceAmt,uBgAmt,uFgAmt,uAudio,uImgWarp,uMaskLo,uSat,uExpo,uRipple,uMorphPulse,uKick,uMine;
-uniform vec3 uBack;
+uniform float uGlow,uChaos,uSpaceAmt,uBgAmt,uFgAmt,uAudio,uImgWarp,uMaskLo,uSat,uExpo,uRipple,uMorphPulse,uKick,uMine,uAbs;
+uniform vec3 uBack,uFinger;
 uniform vec4 uTouch[6];
 uniform float uTouchAmp;
 uniform vec2 uTexel;
@@ -524,15 +543,32 @@ void main(){
 
   // nebula visions
   float mk=fbm(p*1.6+q*1.8+vec2(-t*.013,t*.009));
+  float ab=uMine*uAbs;                                    // 0: your photo is recognizable, 1: fully abstract
   float mask=smoothstep(uMaskLo-.1*uChaos-.18*uMine,uMaskLo+.22,mk);
-  vec2 wuv=uv+(q-.5)*(uImgWarp+.03*uChaos)+vec2(sin(uv.y*28.+t*8.)*.005*uKick,0.);
-  // your own photo melts: it swirls, stretches, and flows in liquid bands
-  vec2 mc=wuv-.5; float ma=uMine*.5*sin(t*.21+length(mc)*5.);
+  mask=mix(mask,max(mask,.82),uMine*(1.-uAbs));           // recognizable: it shows broadly across the screen
+  // finger lens: photos swirl and swell around the place you touch
+  vec2 dpf=p-uFinger.xy; float fall=exp(-dot(dpf,dpf)*4.5)*uFinger.z;
+  float fa=fall*.85*(1.+.9*uMine);
+  dpf=mat2(cos(fa),-sin(fa),sin(fa),cos(fa))*dpf*(1.-.22*fall);
+  vec2 uvf=(uFinger.xy+dpf)/vec2(uAspect,1.)+.5;
+  vec2 wuv=uvf+(q-.5)*(uImgWarp+.03*uChaos)+vec2(sin(uv.y*28.+t*8.)*.005*uKick,0.);
+  // your own photo melts: gentle when recognizable, a flowing organic smear when abstract
+  vec2 mc=wuv-.5; float ma=uMine*(.1+1.25*uAbs)*sin(t*.21+length(mc)*5.+uAbs*3.);
   mc=mat2(cos(ma),-sin(ma),sin(ma),cos(ma))*mc*(1.+.08*uMine*sin(t*.33));
-  wuv=mix(wuv,mc+.5+(q-.5)*.12+vec2(sin(mc.y*11.+t*.9),cos(mc.x*9.-t*.7))*.025,uMine);
+  vec2 org=vec2(fbm(mc*3.2+vec2(t*.07,0.)),fbm(mc*3.2+vec2(5.,-t*.06)))-.5;
+  float liq=.006+.06*uAbs;
+  wuv=mix(wuv,mc+.5+org*(.03+.5*uAbs*uAbs)+vec2(sin(mc.y*11.+t*.9),cos(mc.x*9.-t*.7))*liq,uMine);
   vec3 im=mix(ph(uImgA,cover(wuv,uAspA)),ph(uImgB,cover(wuv,uAspB)),uImgMix);
+  if(ab>.02){                                             // abstract: soften into a flowing blur
+    vec2 bo=(org+vec2(.2,-.1))*.05*ab;
+    vec3 i2=mix(ph(uImgA,cover(wuv+bo,uAspA)),ph(uImgB,cover(wuv+bo,uAspB)),uImgMix);
+    vec3 i3=mix(ph(uImgA,cover(wuv-bo*1.3,uAspA)),ph(uImgB,cover(wuv-bo*1.3,uAspB)),uImgMix);
+    im=(im+i2+i3)/3.;
+  }
   float li=luma(im);
-  vec3 tint=mix(im,li*pal(li*.5+.2)*1.4,.07);
+  // your photo is repainted in the theme palette: half-and-half when recognizable, almost fully when abstract
+  vec3 gmap=pal(li*1.25+q.y*.35+t*.012)*(.22+1.2*smoothstep(.02,.95,li));
+  vec3 tint=mix(im,gmap,mix(.07,mix(.5,.94,uAbs),uMine));
   float a=clamp(mask*mix(uSpaceAmt,max(uSpaceAmt,.75),uMine)*(.5+.8*li)*(1.+.8*uKick)*(1.+.5*uMine),0.,.95);
   col=mix(col,1.-(1.-col)*(1.-tint),a);
 
@@ -737,7 +773,7 @@ function addUserFiles(files) {
   [...files].filter(f => f.type.startsWith('image/')).forEach(f => {
     const name = f.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ');
     loadImage({ caption: name, credit: 'Your image', user: true, rough: .5 }, URL.createObjectURL(f), e => {
-      realSpace.unshift(e); cycStart(spaceCyc, e);
+      realSpace.unshift(e); cycStart(spaceCyc, e); abstractT = -Math.PI / 2 / .5;   // arrives recognizable
       toast('Your photo is drifting in');
     });
   });
@@ -1273,7 +1309,7 @@ function setSound(on) {
   if (on) {
     if (!startSynth()) return;
     kickOn = false; kickTimer = 3;
-    if (!S.told) { S.told = true; toast('Move around the screen to change the rhythm'); }
+    if (!S.told) { S.told = true; toast('Move your finger around to change the scene and sound'); }
   } else stopSynth();
   $('#bSound').setAttribute('aria-pressed', !!S.synth);
 }
@@ -1459,11 +1495,14 @@ function hideHint() {} // the intro replaces the old hint
 function setPanel(open) {
   panelOpen = open;
   panel.classList.toggle('open', open);
+  $('#scrim').classList.toggle('on', open);
   openBtn.setAttribute('aria-expanded', open);
   openBtn.setAttribute('aria-label', open ? 'Close settings and info' : 'Open settings and info');
   if (open) { wake(); renderCredits(); syncUI(true); }
 }
 openBtn.addEventListener('click', () => setPanel(!panelOpen));
+$('#scrim').addEventListener('click', () => setPanel(false));
+$('#bDone').addEventListener('click', () => setPanel(false));
 panel.addEventListener('scroll', () => $('.phead').classList.toggle('stuck', panel.scrollTop > 8), { passive: true });
 $('#bClose').addEventListener('click', () => setPanel(false));
 document.addEventListener('pointerdown', e => {
@@ -1735,6 +1774,19 @@ let resizeTimer = 0;
 addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(resize, 120); });
 canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); toast('Graphics were reset. Reload the page to continue.'); });
 
+/* Finger lens, and the wave that carries your own photo in and out of abstract */
+const fing = { x: 0, y: 0, act: 0 };
+let abstractT = -Math.PI / 2 / .5, absLvl = 0;      // starts recognizable, then melts
+function updateFinger(dt, now) {
+  const asp = canvas.width / canvas.height, k = 1 - Math.exp(-dt * 7);
+  fing.x += ((tim.x - .5) * asp - fing.x) * k;
+  fing.y += ((tim.y - .5) - fing.y) * k;
+  const want = (now - tim.lastMove < 2200 || pointers.size) ? 1 : 0;
+  fing.act += (want - fing.act) * (1 - Math.exp(-dt * (want ? 6 : 1.4)));
+  const wave = .5 + .5 * Math.sin(abstractT * .5);              // about a 12 second cycle
+  let a = clamp((wave - .2) / .6); a = a * a * (3 - 2 * a);       // lingers at both ends
+  absLvl = clamp(a + (tim.x - .5) * .7 * fing.act);              // moving right melts it further
+}
 let simTime = Math.random() * 100, inject = 0, nextInject = 18 + Math.random() * 20;
 const audioAmt = () => Math.min(.8, audioLvl) * (RM ? .4 : 1);
 function bindPhotos(P) {
@@ -1742,6 +1794,7 @@ function bindPhotos(P) {
   P.i('uImgA', 1); P.i('uImgB', 2); P.i('uLandA', 3); P.i('uLandB', 4);
   P.f('uImgMix', smooth(spaceCyc.mix)); P.f('uAspA', spaceCyc.A.asp); P.f('uAspB', spaceCyc.B.asp);
   P.f('uMine', (spaceCyc.A.user ? 1 - smooth(spaceCyc.mix) : 0) + (spaceCyc.B.user ? smooth(spaceCyc.mix) : 0));
+  P.f('uAbs', absLvl); P.v3('uFinger', [fing.x, fing.y, fing.act * (RM ? .5 : 1)]);
   P.f('uLandMix', smooth(landCyc.mix)); P.f('uLAspA', landCyc.A.asp); P.f('uLAspB', landCyc.B.asp);
   P.f('uAspect', canvas.width / canvas.height); P.f('uTime', simTime);
   P.v3('uP0', cur.pal[0]); P.v3('uP1', cur.pal[1]); P.v3('uP2', cur.pal[2]); P.v3('uP3', cur.pal[3]);
@@ -1799,9 +1852,11 @@ function frame(now) {
     if (nextInject <= 0) { if (!RM) inject = .02 * cur.spaceAmt + .006; nextInject = 22 + Math.random() * 28; }
     inject *= Math.exp(-dt * 7);
     simTime += dt * SPEED * cur.speed;
+    abstractT += dt * SPEED;
     simStep(dt);
   }
   display();
+  updateFinger(dt, now);
   captureGif(now);
   sampleSurroundings(now);
   if (++frameN % 6 === 0) syncUI();
